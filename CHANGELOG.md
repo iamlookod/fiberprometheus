@@ -1,7 +1,49 @@
 ## ChangeLog
+
 ---
+
+## [2025-02-16] - v3.1.0
+
+### Added
+
+- **SetSkipPaths()** method to exclude specific paths from metrics collection
+  - Useful for health checks, readiness probes, and liveness endpoints
+  - Supports multiple paths configuration
+- **SetIgnoreStatusCodes()** method to filter specific HTTP status codes from metrics
+  - Reduces metrics cardinality by ignoring common status codes (e.g., 404, 401)
+  - Helps reduce noise in monitoring dashboards
+
+### Improved
+
+- Achieved **100% test coverage** with comprehensive test suite
+- Fixed Fiber v3 API compatibility issues in tests
+  - Updated `app.Test()` method calls to match new Fiber v3 signature
+  - Fixed BasicAuth to use SHA256-encoded passwords
+- Added 4 new test cases for filtering functionality
+- Enhanced documentation with advanced usage examples
+- Added API reference documentation in README
+- Added coverage badge showing 100% test coverage
+
+### Tests
+
+- TestSetSkipPaths: Validates path filtering functionality
+- TestSetIgnoreStatusCodes: Validates status code filtering
+- TestSetSkipPathsMultipleCalls: Tests map initialization on multiple calls
+- TestSetIgnoreStatusCodesMultipleCalls: Tests map initialization on multiple calls
+- TestRegistryNotGatherer: Tests fallback to DefaultGatherer
+- TestMiddlewareSkipsMetricsEndpoint: Validates metrics endpoint self-exclusion
+
+### Documentation
+
+- Added advanced usage examples in README
+- Added comprehensive API reference
+- Added features section highlighting capabilities
+- Updated badges to include coverage
+
 ## [2024-04-21] - v3.0.0
+
 ### Refactor to fiberv3
+
 - Updated dependencies to use fiber v3
 - Updated tests to use v3 as well
 
