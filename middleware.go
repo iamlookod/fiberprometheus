@@ -25,25 +25,28 @@ import (
 	"strconv"
 	"time"
 
+	"unsafe"
+
 	"github.com/gofiber/fiber/v3"
 	"github.com/gofiber/fiber/v3/middleware/adaptor"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-  "unsafe"
-  "reflect"
 )
 
 // FiberPrometheus ...
 type FiberPrometheus struct {
-	gatherer        prometheus.Gatherer
-	requestsTotal   *prometheus.CounterVec
-	requestDuration *prometheus.HistogramVec
-	requestInFlight *prometheus.GaugeVec
-	cacheHeaderKey  string
-	cacheCounter    *prometheus.CounterVec
-	defaultURL      string
+	gatherer          prometheus.Gatherer
+	requestsTotal     *prometheus.CounterVec
+	requestDuration   *prometheus.HistogramVec
+	requestInFlight   *prometheus.GaugeVec
+	cacheHeaderKey    string
+	cacheCounter      *prometheus.CounterVec
+	defaultURL        string
+	skipPaths         map[string]bool
+	ignoreStatusCodes map[int]bool
 }
+
 func CopyString(s string) string {
 	return string(UnsafeBytes(s))
 }
@@ -52,10 +55,9 @@ func UnsafeBytes(s string) []byte {
 		return nil
 	}
 
-	return (*[MaxStringLen]byte)(unsafe.Pointer(
-		(*reflect.StringHeader)(unsafe.Pointer(&s)).Data),
-	)[:len(s):len(s)]
+	return unsafe.Slice(unsafe.StringData(s), len(s))
 }
+
 const MaxStringLen = 0x7fff0000
 
 func create(registry prometheus.Registerer, serviceName, namespace, subsystem string, labels map[string]string) *FiberPrometheus {
@@ -205,13 +207,33 @@ func NewWithRegistry(registry prometheus.Registerer, serviceName, namespace, sub
 }
 
 // RegisterAt will register the prometheus handler at a given URL
-func (ps *FiberPrometheus) RegisterAt(app fiber.Router, url string, handlers ...fiber.Handler) {
+func (ps *FiberPrometheus) RegisterAt(app *fiber.App, url string, handlers ...any) {
 	ps.defaultURL = url
 
 	h := append(handlers, adaptor.HTTPHandler(promhttp.HandlerFor(ps.gatherer, promhttp.HandlerOpts{})))
-	app.Get(ps.defaultURL,func (c fiber.Ctx) error  {
-    return c.Next()
+	app.Get(ps.defaultURL, func(c fiber.Ctx) error {
+		return c.Next()
 	}, h...)
+}
+
+// SetSkipPaths allows to set the paths that should be skipped from the metrics
+func (ps *FiberPrometheus) SetSkipPaths(paths []string) {
+	if ps.skipPaths == nil {
+		ps.skipPaths = make(map[string]bool)
+	}
+	for _, path := range paths {
+		ps.skipPaths[path] = true
+	}
+}
+
+// SetIgnoreStatusCodes allows ignoring specific status codes from being recorded in metrics
+func (ps *FiberPrometheus) SetIgnoreStatusCodes(codes []int) {
+	if ps.ignoreStatusCodes == nil {
+		ps.ignoreStatusCodes = make(map[int]bool)
+	}
+	for _, code := range codes {
+		ps.ignoreStatusCodes[code] = true
+	}
 }
 
 // Middleware is the actual default middleware implementation
@@ -220,6 +242,7 @@ func (ps *FiberPrometheus) Middleware(ctx fiber.Ctx) error {
 	path := string(ctx.Request().RequestURI())
 
 	if path == ps.defaultURL {
+
 		return ctx.Next()
 	}
 
@@ -242,8 +265,18 @@ func (ps *FiberPrometheus) Middleware(ctx fiber.Ctx) error {
 		status = ctx.Response().StatusCode()
 	}
 
+	// Check if the normalized path should be skipped
+	if ps.skipPaths[path] {
+		return err
+	}
+
 	// Get status as string
 	statusCode := strconv.Itoa(status)
+
+	// Skip metrics for ignored status codes
+	if ps.ignoreStatusCodes[status] {
+		return err
+	}
 
 	// Update total requests counter
 	ps.requestsTotal.WithLabelValues(statusCode, method, path).Inc()
